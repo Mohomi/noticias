@@ -1,5 +1,5 @@
 {
-  "name": "Gestor de Preferencias Dinámico",
-  "description": "Sistema de configuración de preferencias de usuario con funcionalidad Drag & Drop para fuentes, categorías y subcategorías.",
+  "name": "Chile Geo Selector",
+  "description": "A 4-level cascading dropdown menu for selecting Regions, Provinces, and Communes of Chile.",
   "requestFramePermissions": []
 }

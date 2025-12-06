@@ -6,17 +6,12 @@
 
 This contains everything you need to run your app locally.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1tH_hXvs6NMAU7QJ8nZew_CCA_qgolmKK
+View your app in AI Studio: https://ai.studio/apps/drive/1qOvdJlqAs8J3Nlqh9j3iUEaxcBOuqN91
 
 ## Run Locally
 
 **Prerequisites:**  Node.js
 
-## pip install beautifulsoup4 
-## pip install requests 
-## pip install pandas
-## pip install feedparser
-## pip install pyttsx3
 
 1. Install dependencies:
    `npm install`
