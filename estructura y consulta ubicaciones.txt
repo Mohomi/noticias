@@ -1,0 +1,5 @@
+Fácil de Consultar: Puedes obtener todas las ubicaciones de un usuario con un simple SELECT * FROM tbl_preferencia_ubicacion WHERE id_usuario = X.
+Flexible: Al guardar el ID como string (VARCHAR), es compatible directamente con los IDs que ya usas en tu archivo 
+data.ts
+ ('reg-coquimbo', 'com-laserena'), lo que facilita "rehidratar" el estado en el frontend sin conversiones complejas.
+Tipo de Ubicación: Incluí la columna tipo_ubicacion para que puedas filtrar fácilmente (ej: "traer solo las regiones seleccionadas") sin tener que procesar los strings.

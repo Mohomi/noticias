@@ -1,0 +1,5 @@
+{
+  "name": "Gestor de Preferencias Dinámico",
+  "description": "Sistema de configuración de preferencias de usuario con funcionalidad Drag & Drop para fuentes, categorías y subcategorías.",
+  "requestFramePermissions": []
+}

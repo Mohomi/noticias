@@ -1,0 +1,898 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Settings2, LayoutDashboard, Rss, Hash, Volume2, X } from 'lucide-react';
+import { PreferencesModal } from './components/PreferencesModal';
+import { AdminPanel } from './components/AdminPanel';
+import { ReadingAssistant } from './tts/components/ReadingAssistant';
+
+// --- Componentes del Feed ---
+
+const DespliegaIzquierda = ({ userId, onSelectSource, onSelectCategory, refreshTrigger }: { userId: number | null, onSelectSource: (source: { id: number, name: string } | null) => void, onSelectCategory: (category: { id: number, name: string } | null) => void, refreshTrigger?: number }) => {
+  const [fuentes, setFuentes] = useState<any[]>([]);
+  const [categorias, setCategorias] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    // Cargar fuentes activas
+    fetch(`http://localhost:5000/api/fuentes_preferencias/${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          // Filtrar por esta_suscrito (alias en la query) y asegurar orden por prioridad
+          const activas = data.filter((f: any) => f.esta_suscrito === 1);
+          setFuentes(activas);
+        } else {
+          console.error("Formato de fuentes inválido:", data);
+          setFuentes([]);
+        }
+      })
+      .catch(err => console.error("Error cargando fuentes:", err));
+
+    // Cargar categorías activas
+    fetch(`http://localhost:5000/api/categorias_preferencias/${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          // Filtrar por esta_suscrito (alias en la query)
+          const activas = data.filter((c: any) => c.esta_suscrito === 1);
+          setCategorias(activas);
+        } else {
+          console.error("Formato de categorías inválido:", data);
+          setCategorias([]);
+        }
+      })
+      .catch(err => console.error("Error cargando categorías:", err));
+  }, [userId, refreshTrigger]);
+
+  return (
+    <div className="h-full flex flex-col p-4 overflow-y-auto bg-white/50 backdrop-blur-sm">
+      <div className="mb-6">
+        <h3
+          className="font-bold text-slate-800 mb-2 flex items-center gap-2 cursor-pointer hover:text-blue-600 transition-colors"
+          onClick={handleResetFilters}
+          title="Ver todas las noticias"
+        >
+          <Rss size={18} /> Fuentes Seguidas
+        </h3>
+        <ul className="space-y-2">
+          {fuentes.map(f => (
+            <li
+              key={f.id_fuente}
+              className="flex items-center gap-2 text-sm text-slate-700 bg-white/60 p-2 rounded shadow-sm hover:bg-white/80 transition-colors cursor-pointer hover:ring-2 hover:ring-blue-200"
+              onClick={() => onSelectSource({ id: f.id_fuente, name: f.nombre })}
+            >
+              {f.avatar_url ? (
+                <img
+                  src={f.avatar_url}
+                  alt={f.nombre}
+                  className="w-6 h-6 rounded-full object-cover border border-slate-200"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/24?text=' + f.nombre.charAt(0);
+                  }}
+                />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500">
+                  {f.nombre.charAt(0)}
+                </div>
+              )}
+              <span className="font-medium">{f.nombre}</span>
+            </li>
+          ))}
+          {fuentes.length === 0 && <li className="text-xs text-slate-500 italic">No sigues ninguna fuente.</li>}
+        </ul>
+      </div>
+
+      <div>
+        <h3 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
+          <Hash size={18} /> Categorías
+        </h3>
+        <ul className="space-y-1">
+          {categorias.map(c => (
+            <li
+              key={c.id_categoria}
+              className={`text-sm text-slate-700 bg-white/60 p-2 rounded shadow-sm hover:bg-white/80 transition-colors cursor-pointer hover:ring-2 hover:ring-green-200 ${c.id_categoria_padre ? 'ml-4 border-l-2 border-blue-300' : ''}`}
+              onClick={() => onSelectCategory({ id: c.id_categoria, name: c.nombre })}
+            >
+              {c.nombre}
+            </li>
+          ))}
+          {categorias.length === 0 && <li className="text-xs text-slate-500 italic">No sigues ninguna categoría.</li>}
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+const DespliegaCentro = ({ userId, selectedSource, selectedCategory, onSelectNews, refreshTrigger }: { userId: number | null, selectedSource: { id: number, name: string } | null, selectedCategory: { id: number, name: string } | null, onSelectNews: (news: any) => void, refreshTrigger?: number }) => {
+  const [noticias, setNoticias] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!userId) return;
+    setLoading(true);
+
+    let url = `http://localhost:5000/api/feed/${userId}`;
+
+    // Si hay filtro de fuente, usar el endpoint con source_id
+    if (selectedSource) {
+      url += `?source_id=${selectedSource.id}`;
+    }
+    // Si hay filtro de categoría, usar el endpoint específico de categoría
+    else if (selectedCategory) {
+      url = `http://localhost:5000/api/feed/${userId}/categoria/${selectedCategory.id}`;
+    }
+
+    fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setNoticias(data);
+        } else {
+          console.error("Formato de feed inválido:", data);
+          setNoticias([]);
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Error cargando feed:", err);
+        setLoading(false);
+      });
+  }, [userId, selectedSource, selectedCategory, refreshTrigger]);
+
+  if (loading) return <div className="p-8 text-center text-slate-500">Cargando noticias...</div>;
+
+  return (
+    <div className="h-full overflow-y-auto p-4 space-y-4 bg-slate-50/50">
+      <h2 className="text-xl font-bold text-slate-800 mb-4 sticky top-0 bg-slate-100/90 p-2 backdrop-blur z-10 flex justify-between items-center">
+        <span>Tu Feed de Noticias</span>
+        {selectedSource && (
+          <span className="text-xs font-normal bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+            Solo {selectedSource.name} {selectedSource.id}
+          </span>
+        )}
+        {selectedCategory && (
+          <span className="text-xs font-normal bg-green-100 text-green-800 px-2 py-1 rounded-full">
+            Categoría: {selectedCategory.name} {selectedCategory.id}
+          </span>
+        )}
+      </h2>
+      {noticias.map(noticia => (
+        <div
+          key={noticia.id_noticia}
+          className="bg-white p-4 rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer hover:ring-2 hover:ring-blue-200"
+          onClick={() => onSelectNews(noticia)}
+        >
+          {noticia.imagen_principal_url && (
+            <img
+              src={noticia.imagen_principal_url}
+              alt={noticia.titulo}
+              className="w-full h-48 object-cover rounded-md mb-3"
+              onError={(e) => (e.currentTarget.style.display = 'none')}
+            />
+          )}
+          <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
+            <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">{noticia.nombre_fuente}</span>
+            <span>{noticia.fecha_hora_publicacion}</span>
+          </div>
+          <h3 className="text-lg font-bold text-slate-900 mb-2 leading-tight">{noticia.titulo}</h3>
+          <p className="text-sm text-slate-600 line-clamp-3">{noticia.resumen}</p>
+        </div>
+      ))}
+      {noticias.length === 0 && (
+        <div className="text-center text-slate-500 py-10">
+          No hay noticias para mostrar.
+        </div>
+      )}
+    </div>
+  );
+};
+
+const DespliegaDerecha = ({ noticia, onReadNews }: { noticia: any | null, onReadNews: (noticia: any) => void }) => {
+  if (!noticia) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center bg-slate-100/30 text-slate-400 p-8 text-center">
+        <p className="mb-2">Selecciona una noticia para leerla aquí</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-y-auto bg-white p-6 relative">
+      {/* Botón TTS Flotante Superior */}
+      <div className="absolute top-6 right-6 z-10">
+        <button
+          onClick={() => onReadNews(noticia)}
+          className="bg-red-500 hover:bg-red-600 text-white p-3 rounded-full shadow-lg transition-all duration-300 hover:scale-110 active:scale-95 flex items-center justify-center"
+          title="Leer noticia"
+        >
+          <Volume2 size={24} />
+        </button>
+      </div>
+
+      {/* Fuente, Fecha y Hora (Arriba Izquierda) */}
+      <div className="flex items-center gap-2 text-xs text-slate-500 mb-4 pr-16">
+        <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">{noticia.nombre_fuente}</span>
+        <span>{noticia.fecha_hora_publicacion}</span>
+      </div>
+
+      {/* Título Destacado */}
+      <h1 className="text-2xl font-bold text-slate-900 mb-6 leading-tight pr-12">
+        {noticia.titulo}
+      </h1>
+
+      {/* Imagen Principal */}
+      {noticia.imagen_principal_url && (
+        <img
+          src={noticia.imagen_principal_url}
+          alt={noticia.titulo}
+          className="w-full h-auto object-cover rounded-lg shadow-sm mb-6"
+          onError={(e) => (e.currentTarget.style.display = 'none')}
+        />
+      )}
+
+      {/* Cuerpo de la Noticia */}
+      <div className="prose prose-slate max-w-none mb-8 text-slate-700 leading-relaxed whitespace-pre-wrap">
+        {noticia.resumen} {/* Usamos resumen que contiene el cuerpo según la query */}
+      </div>
+
+      {/* Fuente, Fecha y Hora (Repetido al final) */}
+      <div className="flex items-center justify-between border-t border-slate-100 pt-4 mt-8">
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <span className="font-semibold">{noticia.nombre_fuente}</span>
+          <span>•</span>
+          <span>{noticia.fecha_hora_publicacion}</span>
+        </div>
+
+        {/* Botón TTS Inferior */}
+        <button
+          onClick={() => onReadNews(noticia)}
+          className="bg-red-500 hover:bg-red-600 text-white p-3 rounded-full shadow-lg transition-all duration-300 hover:scale-110 active:scale-95 flex items-center justify-center"
+          title="Leer noticia"
+        >
+          <Volume2 size={24} />
+        </button>
+      </div>
+
+      {/* Link original opcional */}
+      {noticia.url && (
+        <div className="mt-4 text-right">
+          <a href={noticia.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">
+            Ver original
+          </a>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const DespliegaFeed = ({ userId, userName, onReadNews, refreshTrigger }: { userId: number | null, userName: string, onReadNews: (noticia: any) => void, refreshTrigger?: number }) => {
+  // Estado para el ancho de las columnas (porcentajes)
+  const [leftWidth, setLeftWidth] = useState(20);
+  const [rightWidth, setRightWidth] = useState(40); // Aumentar ancho por defecto para lectura
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Estado para filtros y noticia seleccionada
+  const [selectedSource, setSelectedSource] = useState<{ id: number, name: string } | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<{ id: number, name: string } | null>(null);
+  const [selectedNews, setSelectedNews] = useState<any | null>(null);
+
+  // Fecha actual formateada
+  const currentDate = new Date().toLocaleDateString('es-ES', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  // Handlers para selección de filtros
+  const handleSelectSource = (source: { id: number, name: string } | null) => {
+    setSelectedSource(source);
+    setSelectedCategory(null); // Resetear categoría cuando se selecciona fuente
+  };
+
+  const handleSelectCategory = (category: { id: number, name: string } | null) => {
+    setSelectedCategory(category);
+    setSelectedSource(null); // Resetear fuente cuando se selecciona categoría
+  };
+
+  const handleResetFilters = () => {
+    setSelectedSource(null);
+    setSelectedCategory(null);
+  };
+
+  // Manejadores de redimensionamiento
+  const handleMouseDownLeft = (e: React.MouseEvent) => {
+    e.preventDefault();
+    document.addEventListener('mousemove', handleMouseMoveLeft);
+    document.addEventListener('mouseup', handleMouseUpLeft);
+  };
+
+  const handleMouseMoveLeft = (e: MouseEvent) => {
+    if (containerRef.current) {
+      const containerWidth = containerRef.current.offsetWidth;
+      const newLeftWidth = (e.clientX / containerWidth) * 100;
+      if (newLeftWidth > 10 && newLeftWidth < 40) { // Límites
+        setLeftWidth(newLeftWidth);
+      }
+    }
+  };
+
+  const handleMouseUpLeft = () => {
+    document.removeEventListener('mousemove', handleMouseMoveLeft);
+    document.removeEventListener('mouseup', handleMouseUpLeft);
+  };
+
+  const handleMouseDownRight = (e: React.MouseEvent) => {
+    e.preventDefault();
+    document.addEventListener('mousemove', handleMouseMoveRight);
+    document.addEventListener('mouseup', handleMouseUpRight);
+  };
+
+  const handleMouseMoveRight = (e: MouseEvent) => {
+    if (containerRef.current) {
+      const containerWidth = containerRef.current.offsetWidth;
+      // El ancho derecho se calcula desde el borde derecho
+      const newRightWidth = ((containerWidth - e.clientX) / containerWidth) * 100;
+      if (newRightWidth > 20 && newRightWidth < 60) { // Límites más amplios para lectura
+        setRightWidth(newRightWidth);
+      }
+    }
+  };
+
+  const handleMouseUpRight = () => {
+    document.removeEventListener('mousemove', handleMouseMoveRight);
+    document.removeEventListener('mouseup', handleMouseUpRight);
+  };
+
+  return (
+    <div className="w-full h-screen flex flex-col bg-slate-50">
+      {/* Header Superior */}
+      <div className="w-full h-12 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-20">
+        {/* Espaciador Izquierdo para balancear */}
+        <div className="flex-1"></div>
+
+        {/* Centro: Fecha */}
+        <div className="flex-1 text-center font-semibold text-slate-700 capitalize">
+          {currentDate}
+        </div>
+
+        {/* Derecha: Info Usuario */}
+        <div className="flex-1 flex justify-end items-center gap-4 text-sm">
+          <div className="flex flex-col items-end leading-tight">
+            <span className="font-bold text-slate-800">{userName}</span>
+            <span className="text-xs text-slate-500">ID: {userId}</span>
+          </div>
+          <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold">
+            {userName.charAt(0).toUpperCase()}
+          </div>
+        </div>
+      </div>
+
+      {/* Contenedor de 3 Columnas */}
+      <div ref={containerRef} className="w-full flex-1 flex overflow-hidden relative">
+        {/* Columna Izquierda */}
+        <div style={{ width: `${leftWidth}%` }} className="h-full border-r border-slate-200">
+          <DespliegaIzquierda
+            userId={userId}
+            onSelectSource={handleSelectSource}
+            onSelectCategory={handleSelectCategory}
+            refreshTrigger={refreshTrigger}
+          />
+        </div>
+
+        {/* Resizer Izquierdo */}
+        <div
+          className="w-1 hover:w-2 bg-transparent hover:bg-blue-400 cursor-col-resize absolute z-10 h-full transition-all"
+          style={{ left: `${leftWidth}%` }}
+          onMouseDown={handleMouseDownLeft}
+        />
+
+        {/* Columna Central */}
+        <div style={{ width: `${100 - leftWidth - rightWidth}%` }} className="h-full">
+          <DespliegaCentro
+            userId={userId}
+            selectedSource={selectedSource}
+            selectedCategory={selectedCategory}
+            onSelectNews={setSelectedNews}
+            refreshTrigger={refreshTrigger}
+          />
+        </div>
+
+        {/* Resizer Derecho */}
+        <div
+          className="w-1 hover:w-2 bg-transparent hover:bg-blue-400 cursor-col-resize absolute z-10 h-full transition-all"
+          style={{ right: `${rightWidth}%` }}
+          onMouseDown={handleMouseDownRight}
+        />
+
+        {/* Columna Derecha */}
+        <div style={{ width: `${rightWidth}%` }} className="h-full border-l border-slate-200">
+          <DespliegaDerecha noticia={selectedNews} onReadNews={onReadNews} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function App() {
+  console.log('🚀 App component is rendering...');
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showRegistro, setShowRegistro] = useState(false);
+  const [showIngreso, setShowIngreso] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [isWelcomeMode, setIsWelcomeMode] = useState(false);
+  const [userName, setUserName] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Estados para el formulario de registro
+  const [formRegistro, setFormRegistro] = useState({
+    nombre: '',
+    email: '',
+    password: '',
+    direccion: ''
+  });
+
+  // Estados para el formulario de ingreso
+  const [formIngreso, setFormIngreso] = useState({
+    email: '',
+    password: ''
+  });
+
+  // Estado para TTS
+  const [showTTS, setShowTTS] = useState(false);
+  const [ttsText, setTtsText] = useState('');
+
+  // Estado para forzar refresh del feed
+  const [refreshFeed, setRefreshFeed] = useState(0);
+
+  // Función para generar el texto de la noticia
+  const genera_feed_txt = (noticia: any): string => {
+    // Construir el texto a leer
+    // Formato: Titulo. Fecha. Fuente. Cuerpo.
+    // Aseguramos que no haya valores nulos
+    const titulo = noticia.titulo || '';
+    const fecha = noticia.fecha_hora_publicacion || '';
+    const fuente = noticia.nombre_fuente || '';
+    const cuerpo = noticia.resumen || ''; // En la query 'cuerpo' se mapea a 'resumen'
+
+    let noticia_txt = `Título: ${titulo}. `;
+    if (fecha) noticia_txt += `Fecha: ${fecha}. `;
+    if (fuente) noticia_txt += `Fuente: ${fuente}. `;
+    if (cuerpo) noticia_txt += `Contenido: ${cuerpo}`;
+
+    return noticia_txt;
+  };
+
+  // Función para leer en voz alta
+  const lee_vozalta = (text: string) => {
+    setTtsText(text);
+    setShowTTS(true);
+  };
+
+  // Handler principal para el botón TTS
+  const handleReadNews = (noticia: any) => {
+    const text = genera_feed_txt(noticia);
+    lee_vozalta(text);
+  };
+
+  // Función para mostrar formulario de registro
+  const registro_usuario = () => {
+    console.log('🔐 Función registro_usuario llamada');
+    setShowRegistro(true);
+    setShowIngreso(false);
+    setErrorMessage('');
+    // Resetear formulario
+    setFormRegistro({
+      nombre: '',
+      email: '',
+      password: '',
+      direccion: ''
+    });
+  };
+
+  // Función para mostrar formulario de ingreso
+  const ingreso_usuario = () => {
+    console.log('🔐 Función ingreso_usuario llamada');
+    setShowIngreso(true);
+    setShowRegistro(false);
+    setErrorMessage('');
+    // Resetear formulario
+    setFormIngreso({
+      email: '',
+      password: ''
+    });
+  };
+
+  // Función para enviar el formulario de registro
+  const handleRegistrarse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    // Validar campos requeridos
+    if (!formRegistro.nombre || !formRegistro.email || !formRegistro.password) {
+      setErrorMessage('Por favor complete todos los campos requeridos (nombre, email, contraseña)');
+      return;
+    }
+
+    // Validar email
+    if (!formRegistro.email.includes('@')) {
+      setErrorMessage('Por favor ingrese un email válido');
+      return;
+    }
+
+    // Validar longitud de contraseña
+    if (formRegistro.password.length > 10) {
+      setErrorMessage('La contraseña debe tener máximo 10 caracteres');
+      return;
+    }
+
+    try {
+      console.log('📤 Enviando solicitud de registro a la API...');
+      const response = await fetch('http://localhost:5000/api/registro', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nombre: formRegistro.nombre,
+          email: formRegistro.email,
+          password: formRegistro.password,
+          direccion: formRegistro.direccion || null
+        })
+      });
+
+      const data = await response.json();
+      console.log('📥 Respuesta de la API:', data);
+
+      if (data.success) {
+        console.log('✅ Registro exitoso');
+        setIsAuthenticated(true);
+        setShowRegistro(false);
+        setErrorMessage('');
+
+        // Configurar datos del usuario recién registrado
+        setUserName(formRegistro.nombre);
+        // data.id_usuario viene de la respuesta del registro
+        if (data.id_usuario) {
+          setCurrentUserId(data.id_usuario);
+        }
+
+        // Activar modo bienvenida inmediatamente después del registro
+        console.log('✨ Usuario registrado. Iniciando modo bienvenida.');
+        setIsWelcomeMode(true);
+        setIsModalOpen(true);
+      } else {
+        setErrorMessage(data.message || 'Error al registrar usuario');
+        console.log('❌ Error en el registro:', data.message);
+      }
+    } catch (error) {
+      console.error('❌ Error al conectar con la API:', error);
+      setErrorMessage('Error al conectar con el servidor. Asegúrate de que la API Flask esté corriendo.');
+    }
+  };
+
+  // Función para enviar el formulario de ingreso
+  const handleIngresar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    // Validar campos requeridos
+    if (!formIngreso.email || !formIngreso.password) {
+      setErrorMessage('Por favor complete email y contraseña');
+      return;
+    }
+
+    try {
+      console.log('📤 Enviando solicitud de ingreso a la API...');
+      const response = await fetch('http://localhost:5000/api/ingreso', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formIngreso.email,
+          password: formIngreso.password
+        })
+      });
+
+      const data = await response.json();
+      console.log('📥 Respuesta de la API:', data);
+
+      if (data.success) {
+        console.log('✅ Ingreso exitoso');
+        setIsAuthenticated(true);
+        // Verificar si es admin (convertir a booleano por si viene como 1/0)
+        const userIsAdmin = Boolean(data.usuario?.admin);
+        console.log('👤 Es admin:', userIsAdmin);
+        setIsAdmin(userIsAdmin);
+        setUserName(data.usuario?.nombre || '');
+        setCurrentUserId(data.usuario?.id_usuario);
+
+        setShowIngreso(false);
+        setErrorMessage('');
+
+        // Ya no verificamos preferencias aquí para mostrar el modal.
+        // El modal de bienvenida solo se muestra tras el registro.
+        alert(`✅ ${data.message}. Bienvenido ${data.usuario?.nombre}!`);
+      } else {
+        setErrorMessage(data.message || 'Credenciales inválidas');
+        console.log('❌ Error en el ingreso:', data.message);
+      }
+    } catch (error) {
+      console.error('❌ Error al conectar con la API:', error);
+      setErrorMessage('Error al conectar con el servidor. Asegúrate de que la API Flask esté corriendo.');
+    }
+  };
+
+  // Función para cargar el panel de administración
+  const carga_panel = () => {
+    console.log('🚀 Cargando panel de administración...');
+    setShowAdminPanel(true);
+  };
+
+  // Función para cerrar el panel de administración
+  const cerrar_panel = () => {
+    console.log('❌ Cerrando panel de administración...');
+    setShowAdminPanel(false);
+  };
+
+  // Función para abrir el panel de admin (ahora llama a carga_panel)
+  const handleOpenAdminPanel = async () => {
+    // Verificamos si realmente es admin antes de cargar el panel
+    if (isAdmin) {
+      carga_panel();
+    } else {
+      alert('⛔ Acceso denegado. Se requieren permisos de administrador.');
+    }
+  };
+
+  // Si no está autenticado, mostrar pantalla de autenticación
+  if (!isAuthenticated) {
+    console.log('📱 Showing authentication screen');
+    console.log('🔍 Estado actual - showRegistro:', showRegistro, 'showIngreso:', showIngreso);
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-300 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full">
+          <h1 className="text-2xl font-bold text-slate-800 mb-4 text-center">Sistema de Noticias</h1>
+
+          {/* Mensaje1 */}
+          <p className="text-sm text-slate-600 mb-6 text-center font-semibold">mensaje1</p>
+
+          {/* Mensaje de error */}
+          {errorMessage && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-xs">
+              {errorMessage}
+            </div>
+          )}
+
+          {/* Formulario de Registro */}
+          {showRegistro && (
+            <form onSubmit={handleRegistrarse} className="space-y-4">
+              <h2 className="text-lg font-semibold text-slate-700 mb-4">Formulario de Registro</h2>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Nombre *</label>
+                <input
+                  type="text"
+                  value={formRegistro.nombre}
+                  onChange={(e) => setFormRegistro({ ...formRegistro, nombre: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Email *</label>
+                <input
+                  type="email"
+                  value={formRegistro.email}
+                  onChange={(e) => setFormRegistro({ ...formRegistro, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Contraseña * (máx. 10 caracteres)</label>
+                <input
+                  type="password"
+                  value={formRegistro.password}
+                  onChange={(e) => setFormRegistro({ ...formRegistro, password: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  maxLength={10}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Dirección (opcional)</label>
+                <input
+                  type="text"
+                  value={formRegistro.direccion}
+                  onChange={(e) => setFormRegistro({ ...formRegistro, direccion: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-lg transition-all duration-300 hover:scale-105 active:scale-95 text-sm"
+                >
+                  Registrarse
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRegistro(false);
+                    setErrorMessage('');
+                  }}
+                  className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-medium py-2 px-4 rounded-lg shadow-lg transition-all duration-300 text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Formulario de Ingreso */}
+          {showIngreso && (
+            <form onSubmit={handleIngresar} className="space-y-4">
+              <h2 className="text-lg font-semibold text-slate-700 mb-4">Formulario de Ingreso</h2>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Email *</label>
+                <input
+                  type="email"
+                  value={formIngreso.email}
+                  onChange={(e) => setFormIngreso({ ...formIngreso, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Contraseña *</label>
+                <input
+                  type="password"
+                  value={formIngreso.password}
+                  onChange={(e) => setFormIngreso({ ...formIngreso, password: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  required
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg shadow-lg transition-all duration-300 hover:scale-105 active:scale-95 text-sm"
+                >
+                  Ingresar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowIngreso(false);
+                    setErrorMessage('');
+                  }}
+                  className="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-medium py-2 px-4 rounded-lg shadow-lg transition-all duration-300 text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Botones de autenticación (solo si no hay formulario visible) */}
+          {!showRegistro && !showIngreso && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500 mb-2 text-center">Seleccione una opción:</p>
+              <button
+                onClick={registro_usuario}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg shadow-lg transition-all duration-300 hover:scale-105 active:scale-95"
+                type="button"
+              >
+                Registro de Usuario
+              </button>
+
+              <button
+                onClick={ingreso_usuario}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-6 rounded-lg shadow-lg transition-all duration-300 hover:scale-105 active:scale-95"
+                type="button"
+              >
+                Ingresar
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Si está autenticado, mostrar contenido principal
+  console.log('✅ User is authenticated, showing main content');
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-300 flex items-center justify-center">
+
+      {/* Feed Principal */}
+      <DespliegaFeed userId={currentUserId} userName={userName} onReadNews={handleReadNews} refreshTrigger={refreshFeed} />
+
+      {/* Botón Flotante de Configuración (Requisito Principal) */}
+      <div className="fixed bottom-8 right-8 z-40">
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="group relative flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full shadow-xl transition-all duration-300 hover:scale-105 active:scale-95"
+          aria-label="Configuración de preferencias"
+        >
+          <Settings2 size={18} className="animate-spin-slow" />
+          <span className="font-medium text-sm hidden group-hover:block transition-all duration-300">
+            Configuración de preferencias
+          </span>
+        </button>
+      </div>
+
+      {/* Botón Panel Admin (Top Right) - Solo visible para admins */}
+      {isAdmin && (
+        <div className="fixed top-8 right-8 z-40">
+          <button
+            onClick={handleOpenAdminPanel}
+            className="group relative flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-full shadow-xl transition-all duration-300 hover:scale-105 active:scale-95"
+            aria-label="Panel de Control"
+          >
+            <LayoutDashboard size={18} />
+            <span className="font-medium text-sm hidden group-hover:block transition-all duration-300">
+              Panel de Control
+            </span>
+          </button>
+        </div>
+      )}
+
+      {/* Modal de Configuración */}
+      <PreferencesModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          // Forzar refresh del feed después de cerrar el modal
+          setRefreshFeed(prev => prev + 1);
+        }}
+        isWelcomeMode={isWelcomeMode}
+        userName={userName}
+        userId={currentUserId}
+      />
+
+      {/* Panel de Administración */}
+      {showAdminPanel && (
+        <AdminPanel onClose={cerrar_panel} />
+      )}
+
+      {/* Modal TTS */}
+      {showTTS && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden relative">
+            <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-gray-50">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <Volume2 className="text-indigo-600" size={20} />
+                Asistente de Lectura
+              </h3>
+              <button
+                onClick={() => setShowTTS(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-0">
+              <ReadingAssistant text={ttsText} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
